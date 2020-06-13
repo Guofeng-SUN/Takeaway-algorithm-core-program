@@ -1,0 +1,621 @@
+%Total function of system order allocation and dispatch
+function Basted_GeneAlogrithm_Assign_Upgrade2_2_1()
+%%
+
+noRv=xx;             %Speed of couriers under non congestion conditions
+jaRv=xx*noRv;        %Speed of couriers considering congestion
+walkFine=xx;         %Unit cost of each courier
+overFine=xx;         %Penalty for overtime of courier
+makTim=[   ];        %Order generation time matrix
+onTimArry=[  ];      %Order time window matrix
+stopTim=[  ];        %Order waiting time matrix
+postPosion=[  ];     %Node coordinate matrix
+riders=xx;           %Number of couriers
+capacity=xx;         %Courier backpack capacity limit
+riCapacity=zeros(riders,1);          %Current order quantity of express carrier
+restOrder=cell(riders,1);            %The order of unfinished nodes in the task set of express delivery
+newOrder=cell(riders,1);             %Order distribution node order after update
+currentOrder=cell(riders);           %Delivery sequence of all task nodes of the courier at the current time
+primarValues=zeros(riders);          %Applicable function value
+PosRiders=zeros(riders,3);           %Location of courier
+
+savePosition=cell(riders,1);         %Real time updated courier location
+for ri=1:riders
+savePosition{ri,1}=PosRiders(ri,:);
+end
+
+
+disArry=GetpoinDisten(postPosion);     %Distance between points
+% jamflag=Getflg(size(postPosion,1));  %Crowded sign symmetric matrix
+jamflag=zeros(size(postPosion,1));     %Non congestion matrix
+normTim=GetTim(disArry,noRv);          %Normal time matrix
+jamTim=GetJamTim(jamflag,normTim,disArry,jaRv);      %Congestion time matrix
+capaFlg=zeros(riders,1);
+sumValue=0;
+for time=0:1000  
+    for ri=1:riders
+        if riCapacity(ri,1)<0
+            disp('Program allocation error or data error');
+        end
+    end
+    orderNum=find(time==makTim(:,2));
+    if size(orderNum,1)~=0
+        currentArry=[2*orderNum-1,2*orderNum];
+        change=1;
+    else
+        currentArry=[];
+        change=0;
+    end
+    for ri=1:riders
+        newOrder{ri,1}=[restOrder{ri,1},currentArry];
+    end
+    
+    if change==1
+        for tims=1:riders
+            for ri=1:riders
+                if ri==tims
+                    currentOrder{ri,tims}=newOrder{ri,1};
+                else
+                    currentOrder{ri,tims}=restOrder{ri,1};
+                end
+                
+                if size(currentOrder{ri,tims},2)>=2
+                    firstPop=GenerPop(currentOrder{ri,tims});
+                    [primarValue,primaryOrder]=operatGA(firstPop,disArry,jamflag,normTim,jamTim,onTimArry,stopTim,time,overFine,walkFine);
+                    addValue =curToAimDiste(savePosition{ri,1}(end,:),primaryOrder(1,1),postPosion,jamflag,time,noRv,jaRv,onTimArry,overFine,walkFine);
+                    primarValues(ri,tims)=primarValue+ addValue;
+                    currentOrder{ri,tims}=primaryOrder;
+                elseif size(currentOrder{ri,tims},2)==1
+                    addValue =curToAimDiste(savePosition{ri,1}(end,:),currentOrder{ri,tims}(1,1),postPosion,jamflag,time,noRv,jaRv,onTimArry,overFine,walkFine);
+                    primarValues(ri,tims)=addValue;
+                else
+                    primarValues(ri,tims)=0;
+                end
+            end
+        end
+    end
+    
+    penalty=zeros(1,riders);
+    for capaCi=1:riders
+        sumPriValue=zeros(1,riders);
+        minPriValue=inf;
+        minInd=0;
+        for tims=1:riders
+            sumPriValue(1,tims)=sum(primarValues(:,tims))+penalty(1,tims);
+            if minPriValue>sumPriValue(1,tims)
+                minPriValue= sumPriValue(1,tims);
+                minInd=tims;
+            end          
+        end
+        if minInd==0
+            disp('All bags are full, wrong allocation or wrong data');
+            return
+        end
+         if change==1
+             pan=0;
+             if size(currentOrder{minInd,minInd},2)>=2
+             for pai=2:size(size(currentOrder{minInd,minInd},2))-1
+                 if mod(currentOrder{minInd,minInd}(1,pai),2)~=0&&mod(currentOrder{minInd,minInd}(1,pai+1),2)~=0
+                     pan=pan+1;
+                 end
+             end
+             end
+            if riCapacity(minInd,1)<capacity ||riCapacity(minInd,1)==capacity&&size(currentOrder{minInd,minInd},2)==0|| riCapacity(minInd,1)==capacity&&pan<capacity
+                break
+            else
+                penalty(1,minInd)=inf;
+                continue
+            end
+         else
+                pan=0;
+             if size(restOrder{minInd,1},2)>=2
+             for pai=2:size(size(restOrder{minInd,1},2))-1
+                 if mod(restOrder{minInd,1}(1,pai),2)~=0&&mod(restOrder{minInd,1}(1,pai+1),2)~=0
+                     pan=pan+1;
+                 end
+             end
+             end
+             if riCapacity(minInd,1)<capacity ||riCapacity(minInd,1)==capacity&&size(restOrder{minInd,1},2)==0|| riCapacity(minInd,1)==capacity&&pan<capacity
+                break
+             else
+                penalty(1,minInd)=inf;
+                continue
+            end
+        end
+    end
+  
+    if change==1
+        sumValue=sumValue+minPriValue;
+        restOrder=currentOrder(:,minInd);
+    end
+    for ri=1:riders
+        restOrder{ri,1}
+    end
+    for ri=1:riders
+        if size(restOrder{ri,1},2)~=0
+            [currPosion,stopTim,capaFlg(ri,1)]=GetPosion(savePosition{ri,1}(end,:), restOrder{ri,1}(1,1),postPosion,jamflag,time,stopTim,noRv,jaRv,capaFlg(ri,1));
+        else
+            currPosion=savePosition{ri,1}(end,:);
+        end
+        savePosition{ri,1}=[savePosition{ri,1};currPosion];
+        if size(restOrder{ri,1},2)~=0&&currPosion(1,2)==postPosion(restOrder{ri,1}(1,1),2)&&currPosion(1,3)==postPosion(restOrder{ri,1}(1,1),3)&&capaFlg(ri,1)==1
+            if mod(restOrder{ri,1}(1,1),2)==0
+                riCapacity(ri,1)=riCapacity(ri,1)-1;
+            else
+                riCapacity(ri,1)=riCapacity(ri,1)+1;
+            end
+            restOrder{ri,1}(1)=[];
+        end
+    end
+    
+    sumFlg=0;
+    for ri=1:riders
+        sumFlg=sumFlg+sum(restOrder{ri,1});
+    end
+    if sumFlg==0&&time>90
+        disp('all riders arrive the end-AimPoint ')
+        break;
+    end
+end
+for re=1:riders
+    ui=1;
+    unique=zeros(1,1);
+    if size(savePosition{re,1},1)>=2
+        for de=1:size(savePosition{re,1},1)-1
+            if savePosition{re,1}(de,:)==savePosition{re,1}(de+1,:)
+                unique(ui,1)=de+1;
+                ui=ui+1;
+            end
+        end
+        savePosition{re,1}(unique,:)=[];
+    end
+    savePosition{re,1}
+end
+
+time
+sumValue
+hold on;
+Aride=['A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z'];
+for ri=1:riders
+    plot(PosRiders(ri,2),PosRiders(ri,3),'*')
+    test_t=num2str(Aride(1,ri));
+    text(PosRiders(ri,2),PosRiders(ri,3),test_t);
+end
+for ploti=1:size(postPosion,1)
+    plot(postPosion(ploti,2),postPosion(ploti,3),'ok')
+end
+for plote=1:size(postPosion,1)
+    test_t=num2str(postPosion(plote,1));
+    text(postPosion(plote,2),postPosion(plote,3),test_t);
+end
+mark=['-r','-g','-y','-b','-k',':r',':g',':y',':b',':k','->r','->g','->y','->b','->k'];
+hold on
+for ri=1:riders
+    if size(savePosition{ri,1},1)>=2
+        Drawing(savePosition{ri,1},mark(1,ri));
+    end 
+end
+
+%Graph result output function
+%%
+    function  Drawing(savPosionB,mark)
+        for pli=1:size(savPosionB,1)-1
+            plot([savPosionB(pli,2),savPosionB(pli+1,2)],[savPosionB(pli,3),savPosionB(pli+1,3)],mark)
+        end
+    end
+%%
+
+%Real time location acquisition function of take-out
+%%    
+    function [currPosion,stopTim,change]=GetPosion(oriPosion,aimPoint,postPosion,jamflag,timPoint,stopTim,noRv,jaRv,change)       
+        rv=noRv;
+        if oriPosion(1,2)==postPosion(aimPoint,2)&&oriPosion(1,3)==postPosion(aimPoint,3)&&stopTim(1,aimPoint)>=1
+            currPosion=postPosion(aimPoint,:);
+            stopTim(1,aimPoint)=stopTim(1,aimPoint)-1;
+            if  stopTim(1,aimPoint)<=0
+                change=1;
+                return
+            else
+                change=0;
+                return
+            end 
+        elseif oriPosion(1,2)==postPosion(aimPoint,2)&&oriPosion(1,3)==postPosion(aimPoint,3)&&stopTim(1,aimPoint)<=0
+            change=1;
+        end
+        if timPoint>=30&&timPoint<=56
+            for r=1:size(jamflag,1)
+                ab(1,1)= postPosion(aimPoint,2)- postPosion(r,2);
+                ab(1,2)=postPosion(aimPoint,3)- postPosion(r,3);
+                cd(1,1)= postPosion(aimPoint,2)- oriPosion(1,2);
+                cd(1,2)=postPosion(aimPoint,3)- oriPosion(1,3);
+                if jamflag(r,aimPoint)==1&&abs((dot(ab,cd)/(norm(ab)*norm(cd))))>0.95&&abs((dot(ab,cd)/(norm(ab)*norm(cd))))<=1
+                    rv=jaRv;
+                end
+            end
+        end
+        aimPosion=postPosion(aimPoint,:);
+        dx=aimPosion(1,2)-oriPosion(1,2);
+        dy=aimPosion(1,3)-oriPosion(1,3);
+        disten=sqrt(dx^2+dy^2);
+        minDis=disten;
+        if minDis>=rv
+            minDis=rv;
+        end
+        currPosion=oriPosion;
+        currPosion(1,2)=oriPosion(1,2)+minDis*(dx/disten);
+        currPosion(1,3)=oriPosion(1,3)+minDis*(dy/disten);
+        currPosion(1,1)=0;
+    end
+%%
+
+% Operation flow of genetic algorithm
+    function [priotyValue,priotyOrder,gePop]=operatGA(firstPop,disArry,jamflag,normTim,jamTim,onTimArry,stopTim,timPoint,overFine,walkFine)
+        priotyValue=inf;
+        priotyOrder=[];
+        if size(firstPop,1)==2
+            tValue(1,1)=GetTimValue(firstPop(1,:),jamflag,normTim,jamTim,onTimArry,stopTim,timPoint,overFine);
+            tValue(2,1)=GetTimValue(firstPop(2,:),jamflag,normTim,jamTim,onTimArry,stopTim,timPoint,overFine);
+            dValue(1,1)=GetDisValue(firstPop(1,:),disArry,walkFine);
+            dValue(2,1)=GetDisValue(firstPop(2,:),disArry,walkFine);
+            if tValue(1,1)+dValue(1,1)<tValue(2,1)+dValue(2,1)
+                priotyOrder=firstPop(1,:);
+                priotyValue=tValue(1,1)+dValue(1,1);
+            else
+                priotyOrder=firstPop(2,:);
+                priotyValue=tValue(2,1)+dValue(2,1);
+            end
+        else
+            for pi=1:1000
+                chilPop=firstPop;
+                varPorri=0.01;
+                for ci=1:size(firstPop,1)/2
+                    [chospar1,chospar2]=Ga2parent(firstPop);
+                    [son1,son2]=CrossPare(chospar1,chospar2);
+                    chilPop(2*ci-1,:)=son1;
+                    chilPop(2*ci,:)=son2;
+                end
+                for vi=1:size(firstPop,1)
+                    vfact=rand()*0.1;
+                    if vfact<=varPorri
+                        chilPop(vi,:)=VarPop(chilPop(vi,:));
+                    end
+                end
+                judgValueArry=zeros(size(firstPop,1),1);
+                timValueArry=zeros(size(firstPop,1),1);
+                disValueArry=zeros(size(firstPop,1),1);
+                for i=1:size(firstPop,1)
+                    timValueArry(i,:)=GetTimValue(firstPop(i,:),jamflag,normTim,jamTim,onTimArry,stopTim,timPoint,overFine);
+                    disValueArry(i,:)=GetDisValue(firstPop(i,:),disArry,walkFine);
+                    judgValueArry(i,:)=timValueArry(i,:)+disValueArry(i,:);
+                end
+                firstPopValue=[firstPop,judgValueArry];
+                firstPopValue=sortrows( firstPopValue,size( firstPopValue,2));
+                firstPopValue(:,end)=[];
+                currenPop=firstPopValue;
+                for i=1:size(chilPop,1)
+                    timValueArry(i,:)=GetTimValue(chilPop(i,:),jamflag,normTim,jamTim,onTimArry,stopTim,timPoint,overFine);
+                    disValueArry(i,:)=GetDisValue(chilPop(i,:),disArry,walkFine);
+                    judgValueArry(i,:)=timValueArry(i,:)+disValueArry(i,:);
+                end
+                chilPopValue=[chilPop,judgValueArry];
+                chilPopValue=sortrows(chilPopValue,size(chilPopValue,2));
+                priotyV=chilPopValue(1,end);
+                priotyO=chilPopValue(1,1:end-1);
+                chilPopValue(:,end)=[];
+                chilPop=chilPopValue;
+                gePop=GaNewpop(currenPop,chilPop);
+                if priotyValue>priotyV
+                    flg=1;
+                    priotyValue=priotyV;
+                    priotyOrder=priotyO;
+                else
+                    flg=0;
+                end
+                if flg==1
+                    count=0;
+                else
+                    count=count+1;
+                end
+                if count>=20
+                    break
+                end
+                firstPop=gePop;
+                continue
+            end
+        end
+    end
+
+%Hybridization process
+%% 
+    function [son1,son2]=CrossPare(father1,father2) %Crossing two parents to produce two offspring
+        spli=size(father1,2);
+        if spli>=3
+            loct=randi(spli-1);
+            befath1=zeros(1,loct);
+            befath2=zeros(1,loct);
+            aftfath1=zeros(1,spli-loct);
+            aftfath2=zeros(1,spli-loct);
+            befath1(1:end)=father1(1:loct);
+            befath2(1:end)=father2(1:loct);
+            aftfath1(1:end)=father1(loct+1:end);
+            aftfath2(1:end)=father2(loct+1:end);
+            newaffin1=aftfath1;
+            newaffin2=aftfath2;
+            pi=1;
+            for af1=1:size(aftfath1,2)
+                for af2=1:size(father2,2)
+                    if aftfath1(1,af1)==father2(1,af2)
+                        newaffin2(1,pi)=af2;
+                        pi=pi+1;
+                        break
+                    end
+                end
+            end
+            pi=1;
+            for af2=1:size(aftfath2,2)
+                for af1=1:size(father1,2)
+                    if aftfath2(1,af2)==father1(1,af1)
+                        newaffin1(1,pi)=af1;
+                        pi=pi+1;
+                        break
+                    end
+                end
+            end
+            newaffin1=sort(newaffin1);
+            newaffin2=sort(newaffin2);
+            son1=ConstOrd([befath1 father2(newaffin2)]);
+            son2=ConstOrd([befath2 father1(newaffin1)]);
+        end
+    end
+%%
+
+%Order dispatch order constraint function
+    function  pop=ConstOrd(pseP)  
+        n=size(pseP,2);
+        if n==2&&mod(pseP(1,1),2)==0&&pseP(1,1)-1==pseP(1,2)
+            k=pseP(1,1);
+            pseP(1,1)=pseP(1,2);
+            pseP(1,2)=k;
+            pop=pseP;
+        elseif n==2
+            pop=pseP;
+        else
+            n=100;
+            for j=1 :2:n
+                if  find(pseP==j)>find(pseP==j+1)
+                    a=find(pseP==j);
+                    b=find(pseP==j+1);
+                    k=pseP(1,a);
+                    pseP(1,a)=pseP(1,b);
+                    pseP(1,b)= k;
+                end
+            end
+            pop=pseP;
+        end
+    end
+%%
+
+%Variation operation function
+%%
+    function [popvar,coo1,coo2]=VarPop(pop1)
+        while 1
+            co1=randi(size(pop1,2));
+            co2=randi(size(pop1,2));
+            if ( co1==co2)
+                continue;
+            elseif (mod(pop1(1,co1), 2)==0&&mod(pop1(1,co2),2)==0)...
+                    ||(mod(pop1(1,co1), 2)==1&&mod(pop1(1,co2),2)==1)
+                break
+            else
+                continue;
+            end
+        end
+        coo1=co1;
+        coo2=co2;
+        kk=pop1(1,co1);
+        pop1(1,co1)=pop1(1,co2);
+        pop1(1,co2)=kk;
+        popvar=ConstOrd(pop1);
+    end
+%%
+
+%Generating a new generation of population function
+%%
+    function gepop=GaNewpop(currpop,chilpop)
+        r=size(currpop,1);
+        c=size(currpop,2);
+        gepop=zeros(r,c);
+        gepop(1:r/2,:)=currpop(1:r/2,:);
+        gepop(r/2+1:end,:)=chilpop(1:r/2,:);
+    end
+%%
+
+%Parent selection function
+%%
+    function [chospar1,chospar2]=Ga2parent(pops)
+        while 1
+            cho1=randi(size(pops,1));
+            cho2=randi(size(pops,1));
+            if cho1==cho2
+                continue
+            else
+                break
+            end
+        end
+        chospar1=pops(cho1,:);
+        chospar2=pops(cho2,:);
+    end
+
+%%
+
+
+%Initialization population function
+%%
+    function firstpopNew=GenerPop(ordeArry)
+        ordeArryNew=ordeArry(1,2:end);
+        c=size(ordeArryNew,2);
+        if c==1
+            firstpopNew(1,:)=ordeArry;
+            firstpopNew(2,:)=ordeArry;
+            return
+        elseif c>=2&&c<=4
+            lop=factorial(c);
+        else
+            lop=40;
+        end
+        firstpop=zeros(lop,c);
+        firstpopNew=zeros(lop,c+1);
+        for i=1:lop
+            order=randperm(c);
+            firstpop(i,:)=ordeArryNew(:,order);
+            firstpop(i,:)=ConstOrd(firstpop(i,:));
+            firstpopNew(i,:)=[ordeArry(1,1),firstpop(i,:)];
+        end
+    end
+%%
+
+%Node distance calculation function
+%%
+    function disArry=GetpoinDisten(pointPosition)
+        r=size(pointPosition,1);
+        disArry=zeros(r,r);
+        for i=1:r
+            for j=1:r
+                if i==j
+                    disArry(i,j)=0;
+                else
+                    dx=pointPosition(i,2)-pointPosition(j,2);
+                    dy=pointPosition(i,3)-pointPosition(j,3);
+                    disArry(i,j)=sqrt(dx^2+dy^2);
+                end
+            end
+        end
+    end
+%%
+
+%Congestion matrix function
+%%
+    function jamf=Getflg(n)
+        jamf=zeros(n,n);
+        for ji=1:n
+            for jj=1:n
+                if ji==jj
+                    jamf(ji,jj)=0;
+                elseif jj>ji
+                    flg=round(rand());
+                    jamf(ji,jj)=flg;
+                else
+                    jamf(ji,jj)=jamf(jj,ji);
+                end
+            end
+        end
+    end
+%%
+
+%Travel time function between points without considering congestion
+%%
+    function timArry=GetTim(disArry,rv)
+        r=size(disArry,1);
+        c=size(disArry,2);
+        timArry=zeros(r,c);
+        for di=1:r
+            for dj=1:c
+                timArry(di,dj)=disArry(di,dj)/rv;
+            end
+        end
+    end
+%%
+
+%Travel time function between points considering congestion
+%%    
+    function jamTim=GetJamTim(jamflag,norTim,disArry,rv)
+        r=size(disArry,1);
+        c=size(disArry,2);
+        jamTim=zeros(r,c);
+        for ji=1:r
+            for jj=1:c
+                if jamflag(ji,jj)==1
+                    jamTim(ji,jj)=disArry(ji,jj)/rv;
+                else
+                    jamTim(ji,jj)=norTim(ji,jj);
+                end
+            end
+        end
+    end
+%%
+
+%Late penalty function
+%%
+    function timValue=GetTimValue(ordeArry,jamflag,normTim,jamTim,onTimArry,stopTim,timPoint,overFine)
+        overTim=0;
+        if timPoint>=30&&timPoint<=56
+            for ji=1:size(ordeArry,2)-1
+                if jamflag(ordeArry(1,ji),ordeArry(1,ji+1))==1
+                    ovT=stopTim(1,ordeArry(1,ji))+jamTim(ordeArry(1,ji),ordeArry(1,ji+1))-onTimArry(ordeArry(1,ji+1));
+                    ovT=round(ovT);
+                    if ovT>=1
+                        overTim=overTim+ovT;
+                    end
+                else
+                    ovT=stopTim(1,ordeArry(1,ji))+normTim(ordeArry(1,ji),ordeArry(1,ji+1))-onTimArry(ordeArry(1,ji+1));
+                    ovT=round(ovT);
+                    if ovT>=1
+                        overTim=overTim+ovT;
+                    end
+                end
+            end
+        else
+            for ji=1:size(ordeArry,2)-1
+                ovT=stopTim(1,ordeArry(1,ji))+normTim(ordeArry(1,ji),ordeArry(1,ji+1))-onTimArry(ordeArry(1,ji+1));
+                ovT=round(ovT);
+                if ovT>=1
+                    overTim=overTim+ovT;
+                end
+            end
+        end
+        timValue=overTim*overFine;
+    end
+%%
+
+%Running cost function
+%%
+    function disValue=GetDisValue(ordeArry,disArry,walkFine)
+        disten=0;
+        for ji=1:size(ordeArry,2)-1
+            disten=disten+disArry(ordeArry(1,ji),ordeArry(1,ji+1));
+        end
+        disValue=disten*walkFine;
+    end
+%%
+
+%The cost function of dispatch connection between two task sets
+%%
+    function value =curToAimDiste(oriPosion,aimPoint,postPosion,jamflag,timPoint,noRv,jaRv,onTimArry,overFine,walkFine)
+        rv=noRv;
+        dx=postPosion(aimPoint,2)-oriPosion(1,2);
+        dy=postPosion(aimPoint,3)-oriPosion(1,3);
+        dis=sqrt(dx^2+dy^2);
+        disValue=dis*walkFine;
+        if timPoint>=30&&timPoint<=56
+            for r=1:size(jamflag,1)
+                ab(1,1)= postPosion(aimPoint,2)- postPosion(r,2);
+                ab(1,2)=postPosion(aimPoint,3)- postPosion(r,3);
+                cd(1,1)= postPosion(aimPoint,2)- oriPosion(1,2);
+                cd(1,2)=postPosion(aimPoint,3)- oriPosion(1,3);
+                if jamflag(r,aimPoint)==1&&abs((dot(ab,cd)/(norm(ab)*norm(cd))))>=0.9&&abs((dot(ab,cd)/(norm(ab)*norm(cd))))<=1
+                    rv=jaRv;
+                end
+            end
+        end
+        reTime=dis/rv;
+        overTim=reTime-onTimArry(aimPoint);
+        if overTim>0
+            timeValue=overTim*overFine;
+        else
+            timeValue=0;
+        end
+        value=timeValue+disValue;
+    end
+
+end
+%%
